@@ -6,17 +6,19 @@
 
 ## 一、架构定义
 
-每个 token 保留 $n=4$ 条跨层状态，$X\in\mathbb{R}^{n\times d}$。单个 MoE 子层为：
+每个 token 保留 $`n=4`$ 条跨层状态，$`X\in\mathbb{R}^{n\times d}`$。单个 MoE 子层为：
 
-$$
-X^+=R(X)X+U(X),\qquad
-U(X)=b_sE_s(a_sX)+\sum_{j\in S(X)}g_jb_jE_j(a_jX).
-$$
+```math
+\begin{aligned}
+X^+ &= R(X)X+U(X),\\
+U(X) &= b_sE_s(a_sX)+\sum_{j\in S(X)}g_jb_jE_j(a_jX).
+\end{aligned}
+```
 
-- $E_s$ 是常开的共享专家；$S(X)$ 是 Top-2 路由专家集合，$g_j$ 为选中专家内归一化的门控。
-- $a_j\in\mathbb{R}^{1\times n}$ 是专家特定读取，$b_j\in\mathbb{R}^{n\times1}$ 是专家特定写回；二者可依赖本层输入。首版读取用流维 softmax，写回用逐元素 $2\sigma(\cdot)$，共享专家同理。
-- 路由器读取流均值。专家内的归一化视为 $E_j$ 的一部分；各组采用相同顺序。
-- $R=0.95I+0.05Q$，$Q$ 由 Sinkhorn 近似产生双随机矩阵。只约束残差混合，不把专家读写映射强行约束为双随机。
+- $`E_s`$ 是常开的共享专家；$`S(X)`$ 是 Top-2 路由专家集合，$`g_j`$ 为选中专家内归一化的门控。
+- $`a_j\in\mathbb{R}^{1\times n}`$ 是专家特定读取，$`b_j\in\mathbb{R}^{n\times1}`$ 是专家特定写回；二者可依赖本层输入。首版读取用流维 softmax，写回用逐元素 $`2\sigma(\cdot)`$，共享专家同理。
+- 路由器读取流均值。专家内的归一化视为 $`E_j`$ 的一部分；各组采用相同顺序。
+- $`R=0.95I+0.05Q`$，$`Q`$ 由 Sinkhorn 近似产生双随机矩阵。只约束残差混合，不把专家读写映射强行约束为双随机。
 - 所有专家读取**进入本层时已有的状态**，不等待共享专家的本层输出；状态流与专家不一一绑定。
 
 与“整个 MoE 外套多流”相比，候选增量是**非线性专家计算之前的差异化读取，以及跨层保留的差异化写回**。共享专家本身不是恒等残差。
@@ -27,73 +29,73 @@ $$
 
 ### 1. 公共残差通道得到保留
 
-假设 $R\ge0$ 且 $R\mathbf1=\mathbf1$、$\mathbf1^\top R=\mathbf1^\top$。令 $\bar h=\mathbf1^\top X/n$，则：
+假设 $`R\ge0`$ 且 $`R\mathbf{1}=\mathbf{1}`$、$`\mathbf{1}^\top R=\mathbf{1}^\top`$。令 $`\bar{h}=\mathbf{1}^\top X/n`$，则：
 
-$$
-\bar h^+=\frac1n\mathbf1^\top(RX+U)
-=\bar h+\frac1n\mathbf1^\top U.
-$$
+```math
+\bar{h}^+=\frac{1}{n}\mathbf{1}^\top(RX+U)
+=\bar{h}+\frac{1}{n}\mathbf{1}^\top U.
+```
 
 **结论：** 精确双随机混合不改变流均值，公共通道仍为“原状态＋更新”。这不表示每条流的内容不变，也不保证整个网络的梯度不消失。
 
 ### 2. 固定残差混合的范数界
 
-非负双随机矩阵满足 $\|Q\|_1=\|Q\|_\infty=1$，故：
+非负双随机矩阵满足 $`\lVert Q\rVert_1=\lVert Q\rVert_\infty=1`$，故：
 
-$$
-\|Q\|_2\le\sqrt{\|Q\|_1\|Q\|_\infty}=1.
-$$
+```math
+\lVert Q\rVert_2\le\sqrt{\lVert Q\rVert_1\lVert Q\rVert_\infty}=1.
+```
 
-对 $R=(1-\varepsilon)I+\varepsilon Q$、$0\le\varepsilon<1/2$，由三角不等式及其反向形式：
+对 $`R=(1-\varepsilon)I+\varepsilon Q`$、$`0\le\varepsilon\lt 1/2`$，由三角不等式及其反向形式：
 
-$$
-(1-2\varepsilon)\|v\|_2
-\le\|Rv\|_2\le\|v\|_2.
-$$
+```math
+(1-2\varepsilon)\lVert v\rVert_2
+\le\lVert Rv\rVert_2\le\lVert v\rVert_2.
+```
 
-本方案取 $\varepsilon=0.05$，所以固定单层混合的奇异值位于 $[0.9,1]$。**边界：** $L$ 层乘积的这一通用下界仅为 $0.9^L$，仍会随深度衰减；一般双随机矩阵也可奇异，例如 $Q=\mathbf1\mathbf1^\top/n$ 会抹去全部零均值流差异。
+本方案取 $`\varepsilon=0.05`$，所以固定单层混合的奇异值位于 $`[0.9,1]`$。**边界：** $`L`$ 层乘积的这一通用下界仅为 $`0.9^L`$，仍会随深度衰减；一般双随机矩阵也可奇异，例如 $`Q=\mathbf{1}\mathbf{1}^\top/n`$ 会抹去全部零均值流差异。
 
 若矩阵依赖输入，则：
 
-$$
+```math
 D(R(X)X)[\Delta X]
 =R(X)\Delta X+(DR(X)[\Delta X])X.
-$$
+```
 
 上面的范数界不控制第二项，更不包含专家及路由的导数。因此它是**线性残差混合性质，不是全网络稳定性定理**。
 
-实际 Sinkhorn 为有限迭代：记录 $Q$ 的非负性及行列和误差 $\eta$。若两种和误差均不超过 $\eta$，则只能得到 $\|Q\|_2\le1+\eta$，以及相应的近似界；不能宣称精确守恒。
+实际 Sinkhorn 为有限迭代：记录 $`Q`$ 的非负性及行列和误差 $`\eta`$。若两种和误差均不超过 $`\eta`$，则只能得到 $`\lVert Q\rVert_2\le1+\eta`$，以及相应的近似界；不能宣称精确守恒。
 
 ### 3. 包含基线，但不保证训练性能下限
 
-令所有专家读取相同的 $a$、写回相同的 $b$，则：
+令所有专家读取相同的 $`a`$、写回相同的 $`b`$，则：
 
-$$
+```math
 X^+=RX+b\left[E_s(aX)+\sum_jg_jE_j(aX)\right],
-$$
+```
 
 即“共享读写的多流＋普通 MoE”。只解除写回共享得到 C 组，再解除读取共享得到 D 组，因此在允许参数绑定的同一参数化下：
 
-$$
-\mathcal F_B\subseteq\mathcal F_C\subseteq\mathcal F_D.
-$$
+```math
+\mathcal{F}_B\subseteq\mathcal{F}_C\subseteq\mathcal{F}_D.
+```
 
-进一步令 $X=\mathbf1h$、$a\mathbf1=1$、$b=\mathbf1$，则 $RX=\mathbf1h$，每条流更新为同一个普通 MoE 输出。若其他子层也按相同方式提升、最终取均值，逐层归纳即可恢复 A 组单流网络。
+进一步令 $`X=\mathbf{1}h`$、$`a\mathbf{1}=1`$、$`b=\mathbf{1}`$，则 $`RX=\mathbf{1}h`$，每条流更新为同一个普通 MoE 输出。若其他子层也按相同方式提升、最终取均值，逐层归纳即可恢复 A 组单流网络。
 
-所以同一目标函数有 $\inf_{f\in\mathcal F_D}\mathcal L(f)\le\inf_{f\in\mathcal F_B}\mathcal L(f)$；**这仅是最优可表达损失关系，不保证 SGD、泛化或等算力表现。**
+所以同一目标函数有 $`\inf_{f\in\mathcal{F}_D}\mathcal{L}(f)\le\inf_{f\in\mathcal{F}_B}\mathcal{L}(f)`$；**这仅是最优可表达损失关系，不保证 SGD、泛化或等算力表现。**
 
 ### 4. 为什么差异化读取不是简单换一组输出门控
 
-取两条标量流 $X=(t,-t)^\top$ 与 $X_0=(0,0)^\top$。公共平均读取 $a=(1/2,1/2)$ 对两者都给出 $0$；而 $a_1=(3/4,1/4)$、$a_2=(1/4,3/4)$ 对前者分别读出 $t/2,-t/2$。
+取两条标量流 $`X=(t,-t)^\top`$ 与 $`X_0=(0,0)^\top`$。公共平均读取 $`a=(1/2,1/2)`$ 对两者都给出 $`0`$；而 $`a_1=(3/4,1/4)`$、$`a_2=(1/4,3/4)`$ 对前者分别读出 $`t/2,-t/2`$。
 
-以非线性 $E(u)=u^2$ 示意，两路输出和分别为 $t^2/2$ 与 $0$。任何仅依赖同一个平均输入的函数，都无法作此区分。
+以非线性 $`E(u)=u^2`$ 示意，两路输出和分别为 $`t^2/2`$ 与 $`0`$。任何仅依赖同一个平均输入的函数，都无法作此区分。
 
 这证明**该固定公共读取会丢失、而差异化读取可利用的信息确实存在**；平方函数只是信息通路反例，不是本项目 SwiGLU 的替代实现，也不是对所有动态读取网络的严格表达力分离定理。
 
 **实施上的退化检查：**
 
-- 若专家输出只做双随机混合后立即取均值，$\mathbf1^\top MY/n=\mathbf1^\top Y/n$，混合可能完全无效；本方案把状态保留到后续非线性层。
-- 若复制的流始终同值且写回完全对称，差异化读取无从发挥作用。B/C/D 使用同一微小非均匀写回初值，例如 $(1.03,0.99,0.99,0.99)^\top$，并让独立映射克隆共享映射，保持三组初始前向一致；该初值不是理论最优选择。
+- 若专家输出只做双随机混合后立即取均值，$`\mathbf{1}^\top MY/n=\mathbf{1}^\top Y/n`$，混合可能完全无效；本方案把状态保留到后续非线性层。
+- 若复制的流始终同值且写回完全对称，差异化读取无从发挥作用。B/C/D 使用同一微小非均匀写回初值，例如 $`(1.03,0.99,0.99,0.99)^\top`$，并让独立映射克隆共享映射，保持三组初始前向一致；该初值不是理论最优选择。
 
 ## 三、infra 候选创新方案
 
@@ -101,53 +103,59 @@ $$
 
 ### 方案一：感知多流读写的派发／回传融合（首要）
 
-**派发：** 在 token 原属 GPU 上，把 $u_j=a_jX$ 与路由打包融合，直接写入专家输入的发送布局，避免先物化完整的 `[token, TopK, hidden]` 张量再复制。专家内归一化顺序不变，能否进一步融合单独验证。
+**派发：** 在 token 原属 GPU 上，把 $`u_j=a_jX`$ 与路由打包融合，直接写入专家输入的发送布局，避免先物化完整的 `[token, TopK, hidden]` 张量再复制。专家内归一化顺序不变，能否进一步融合单独验证。
 
-**回传：** 返回每个专家的 $z_j=E_j(u_j)$，按 token 与流分块累积 $g_jb_jz_j$，融合反排列与写回。**不能先按普通 MoE 规则把各专家输出合成一个向量，否则不同的 $b_j$ 无法恢复。**
+**回传：** 返回每个专家的 $`z_j=E_j(u_j)`$，按 token 与流分块累积 $`g_jb_jz_j`$，融合反排列与写回。**不能先按普通 MoE 规则把各专家输出合成一个向量，否则不同的 $`b_j`$ 无法恢复。**
 
-反向必须保留完整语义。在选中专家集合固定的区域内，记 $G=\partial\mathcal L/\partial X^+$、$\delta u_j=\partial\mathcal L/\partial u_j$，则直接贡献为：
+反向必须保留完整语义。在选中专家集合固定的区域内，记 $`G=\partial\mathcal{L}/\partial X^+`$、$`\delta u_j=\partial\mathcal{L}/\partial u_j`$，则直接贡献为：
 
-$$
-\delta z_j=g_jb_j^\top G,\qquad
-\delta b_j=g_jGz_j^\top,\qquad
-\delta g_j=b_j^\top Gz_j^\top,
-$$
+```math
+\begin{aligned}
+\delta z_j &= g_jb_j^\top G,\\
+\delta b_j &= g_jGz_j^\top,\\
+\delta g_j &= b_j^\top Gz_j^\top.
+\end{aligned}
+```
 
-$$
-\delta a_j=\delta u_jX^\top,\qquad
-\delta X_{\rm read}=\sum_j a_j^\top\delta u_j.
-$$
+```math
+\begin{aligned}
+\delta a_j &= \delta u_jX^\top,\\
+\delta X_{\rm read} &= \sum_j a_j^\top\delta u_j.
+\end{aligned}
+```
 
-还须累加共享专家、残差和生成 $a_j,b_j,g_j$ 的网络产生的梯度；不能把上述直接贡献误当全部反向。
+还须累加共享专家、残差和生成 $`a_j,b_j,g_j`$ 的网络产生的梯度；不能把上述直接贡献误当全部反向。
 
 **预期收益与验收：** 减少中间张量和 HBM 往返，不承诺减少网络字节数。比较未融合／只融合读取／只融合写回／双融合，检查前向、梯度、峰值显存及完整训练步耗时。
 
 ### 方案二：按目的设备选择“独立向量”或“公共基底”（条件性）
 
-考虑同一 token 命中某个远端设备的 $m$ 个专家。把读取权重堆叠为 $A\in\mathbb R^{m\times n}$，若已有精确分解 $A=CP$、秩为 $r$，则：
+考虑同一 token 命中某个远端设备的 $`m`$ 个专家。把读取权重堆叠为 $`A\in\mathbb R^{m\times n}`$，若已有精确分解 $`A=CP`$、秩为 $`r`$，则：
 
-$$
+```math
 AX=C(PX).
-$$
+```
 
-可只发送 $r$ 个基底向量 $PX$ 及系数 $C$，目的端重建专家输入；不再发送 $m$ 个独立输入。设向量、系数每元素字节数分别为 $s_v,s_c$：
+可只发送 $`r`$ 个基底向量 $`PX`$ 及系数 $`C`$，目的端重建专家输入；不再发送 $`m`$ 个独立输入。设向量、系数每元素字节数分别为 $`s_v,s_c`$：
 
-$$
-V_{\rm direct}=mds_v,\qquad
-V_{\rm basis}=rds_v+mrs_c+V_{\rm metadata}.
-$$
+```math
+\begin{aligned}
+V_{\rm direct} &= mds_v,\\
+V_{\rm basis} &= rds_v+mrs_c+V_{\rm metadata}.
+\end{aligned}
+```
 
 只在字节数**及额外混合、同步开销**都划算时启用；否则回退直发。该比较针对 D 组独立输入实现，不代表胜过普通 MoE 已有的 token 去重。
 
-写回同理：令 $B=[b_1,\ldots,b_m]=PW$，$\widetilde Z$ 的第 $j$ 行为 $g_jz_j$，则：
+写回同理：令 $`B=[b_1,\ldots,b_m]=PW`$，$`\widetilde Z`$ 的第 $`j`$ 行为 $`g_jz_j`$，则：
 
-$$
+```math
 B\widetilde Z=P(W\widetilde Z).
-$$
+```
 
-目的端可先算 $W\widetilde Z$ 再回传，原属设备用 $P$ 重建多流更新。必须计入写回系数传输及其反向；输入和输出的分解秩可不同。
+目的端可先算 $`W\widetilde Z`$ 再回传，原属设备用 $`P`$ 重建多流更新。必须计入写回系数传输及其反向；输入和输出的分解秩可不同。
 
-**关键限制：** 首轮 Top-2 下 $m\le2$；若每 GPU 仅放一个专家，则 $m\le1$，通常没有低秩通信收益。任意满行秩 $A$ 不能无损压到 $r<m$；强制低秩读写会改变模型，应作为额外架构消融，而非宣称无损优化。不在热路径逐 token 做 SVD。
+**关键限制：** 首轮 Top-2 下 $`m\le2`$；若每 GPU 仅放一个专家，则 $`m\le1`$，通常没有低秩通信收益。任意满行秩 $`A`$ 不能无损压到 $`r\lt m`$；强制低秩读写会改变模型，应作为额外架构消融，而非宣称无损优化。不在热路径逐 token 做 SVD。
 
 因此本方案先测实际秩／可共享结构和目的端聚合机会；只有条件成立再做。额外的较大 TopK 或多专家同设备微基准，与主训练结果分开报告。
 
