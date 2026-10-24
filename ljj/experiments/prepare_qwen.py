@@ -41,11 +41,11 @@ def sha256(path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, default=Path(__file__).parent / "data/qwen-fineweb-proxy")
+    root = Path(__file__).resolve().parent.parent
+    parser.add_argument("--output", type=Path, default=root / "data/qwen-fineweb-proxy")
     parser.add_argument("--max-rows", type=int, default=3000)
     parser.add_argument("--download-only", action="store_true")
     args = parser.parse_args()
-    root = Path(__file__).resolve().parent
     os.environ.setdefault("HF_HOME", str(root / "cache"))
     from huggingface_hub import HfApi, snapshot_download
     import transformers

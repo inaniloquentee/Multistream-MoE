@@ -13,7 +13,7 @@ import transformers
 from torch.nn import functional as F
 from transformers import Qwen3ForCausalLM
 
-from qwen_reference import QwenMultiStream
+from multistream_moe.qwen_reference import QwenMultiStream
 
 
 def get_batch(data, rng, batch_size, length, device):
@@ -51,7 +51,7 @@ def main():
     if args.steps < 2 or args.eval_batches < 1 or args.eval_every < 1:
         raise ValueError("Need at least two steps and positive evaluation settings")
     if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
-        raise RuntimeError("H20 BF16 CUDA device required")
+        raise RuntimeError("BF16 CUDA device required")
     train = np.memmap(args.data / "train.bin", mode="r", dtype=np.uint32)
     val = np.memmap(args.data / "val.bin", mode="r", dtype=np.uint32)
     if min(len(train), len(val)) <= args.seq_len + 1:

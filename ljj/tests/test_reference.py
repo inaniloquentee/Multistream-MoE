@@ -4,7 +4,7 @@ import unittest
 
 import torch
 
-from multistream import Config, MoE, StreamMix, initialized_model
+from multistream_moe.multistream import Config, MoE, StreamMix, initialized_model
 
 
 class ReferenceTests(unittest.TestCase):

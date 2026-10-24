@@ -7,7 +7,7 @@ from torch import nn
 from torch.nn import functional as F
 from transformers.masking_utils import create_causal_mask
 
-from multistream import Config, MoE
+from multistream_moe.multistream import Config, MoE
 
 
 class QwenExpert(nn.Module):

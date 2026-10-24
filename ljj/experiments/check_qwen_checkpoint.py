@@ -11,7 +11,7 @@ import torch
 import transformers
 from transformers import Qwen3ForCausalLM
 
-from qwen_reference import QwenMultiStream
+from multistream_moe.qwen_reference import QwenMultiStream
 
 
 def main():

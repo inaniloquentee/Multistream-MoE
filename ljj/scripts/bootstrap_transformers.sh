@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FORK="https://github.com/inaniloquentee/transformers.git"
 BRANCH="ljj/qwen3-0.6b-validation"
 REVISION="c4c4605f961877852b89b97478536bb3a26b6fd1"

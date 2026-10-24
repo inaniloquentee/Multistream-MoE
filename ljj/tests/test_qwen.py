@@ -6,8 +6,8 @@ import unittest
 import torch
 from transformers import Qwen3Config, Qwen3ForCausalLM
 
-from qwen_reference import QwenMultiStream
-from train_qwen import forward_batch
+from multistream_moe.qwen_reference import QwenMultiStream
+from experiments.train_qwen import forward_batch
 
 
 class QwenReferenceTests(unittest.TestCase):

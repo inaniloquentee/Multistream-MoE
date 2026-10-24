@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from multistream import Config, initialized_model
+from multistream_moe.multistream import Config, initialized_model
 
 
 def batch(data, rng, size, length, device):
