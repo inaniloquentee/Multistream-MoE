@@ -2,7 +2,7 @@
 
 验证：**专家分别读取、写回多流状态，是否能在计入通信成本后改善训练效率？**
 
-状态：实验方案与下述理论推导已建立；训练代码、性能数据及新颖性结论尚未产生。主平台为 H20＋CUDA，先单卡正确性，再按资源使用 4/8 卡专家并行。
+状态：已有可运行的单卡参考实现草稿、Qwen3-0.6B-Base checkpoint 的初始等价检查；完整训练、专家并行、性能数据及新颖性结论尚未完成。主平台为 H20＋CUDA。**[可执行实验规格](ljj/EXPERIMENT.md) 是 A/B/C/D 的权威定义**；原 [实验初稿](docs/EXPERIMENT.md) 保留作历史记录，不应用于复现实验。实测输出和运行限制见 [验证记录](ljj/RESULTS.md)。
 
 ## 一、架构定义
 
@@ -11,17 +11,19 @@
 ```math
 \begin{aligned}
 X^+ &= R(X)X+U(X),\\
-U(X) &= b_sE_s(a_sX)+\sum_{j\in S(X)}g_jb_jE_j(a_jX).
+U(X) &= b_s(X)E_s(a_s(X)X)+\sum_{j\in S(X)}g_j(X)b_j(X)E_j(a_j(X)X).
 \end{aligned}
 ```
 
 - $`E_s`$ 是常开的共享专家；$`S(X)`$ 是 Top-2 路由专家集合，$`g_j`$ 为选中专家内归一化的门控。
-- $`a_j\in\mathbb{R}^{1\times n}`$ 是专家特定读取，$`b_j\in\mathbb{R}^{n\times1}`$ 是专家特定写回；二者可依赖本层输入。首版读取用流维 softmax，写回用逐元素 $`2\sigma(\cdot)`$，共享专家同理。
+- $`a_j(X)\in\mathbb{R}^{1\times n}`$ 是专家特定读取，$`b_j(X)\in\mathbb{R}^{n\times1}`$ 是专家特定写回。首版**逐 token 动态生成**：由归一化流均值的线性投影产生 logits，读取用流维 softmax，写回用逐元素 $`2\sigma(\cdot)`$；共享专家同理。
 - 路由器读取流均值。专家内的归一化视为 $`E_j`$ 的一部分；各组采用相同顺序。
-- $`R=0.95I+0.05Q`$，$`Q`$ 由 Sinkhorn 近似产生双随机矩阵。只约束残差混合，不把专家读写映射强行约束为双随机。
+- $`R(X)=0.95I+0.05Q(X)`$，$`Q(X)`$ 由逐 token logits 经 Sinkhorn 近似产生双随机矩阵。只约束残差混合，不把专家读写映射强行约束为双随机。
 - 所有专家读取**进入本层时已有的状态**，不等待共享专家的本层输出；状态流与专家不一一绑定。
 
 与“整个 MoE 外套多流”相比，候选增量是**非线性专家计算之前的差异化读取，以及跨层保留的差异化写回**。共享专家本身不是恒等残差。
+
+**完整 block 定义：** token/位置嵌入复制到各流。注意力和非 MoE 的稠密 SwiGLU 只读取流均值，各自的输出广播回所有流；它们不折叠残差状态。MoE 在注意力更新后读取同一个旧的四流状态并按上式更新，下一层仍保留四流。路由器读取归一化流均值；最后对流取均值、归一化并作共享词表投影。这样 A/B/C/D 的注意力及稠密主计算相同，差异集中在 MoE 的残差状态和读写；精确公式、初始化、数据与验收见[实验规格](ljj/EXPERIMENT.md)。
 
 ## 二、理论依据与简证
 
@@ -176,14 +178,16 @@ B\widetilde Z=P(W\widetilde Z).
 | C | 4 流，共享读取、专家独立写回 |
 | D | 4 流，专家独立读取、独立写回 |
 
-先按固定数据跑每组 1,000 步排错；扩大预算和多种子验证后，再判断 D 对 B/C 的收益。系统优化保持同一权重、路由与计算语义；基线也开启适用的通用优化。
+先按固定数据跑每组 1,000 步排错；扩展轮从头按 10,000 步的日程、多种子验证后，再判断 D 对 C（独立读取增量）与 C 对 B（独立写回增量）。A 是单流成本参照，不把 A/B 的差异归因于专家特定读写。系统优化保持同一 D 权重、路由与计算语义；基线也开启适用的通用优化。
+
+**优先的预训练模型检验：** 另设 Qwen3-0.6B-Base warm-start 轨道，直接复用 Transformers 的权重、注意力和 tokenizer，将隔层 MLP 提升为共享专家＋Top-2 专家。原始 dense Qwen、同权重提升的普通 MoE A、B/C/D 五组使用相同数据窗口、优化设置和预算。初始化时每个复制专家的输出投影减半，因此共享输出加归一化路由输出精确恢复原 MLP；这是可比起点，不是性能收益。先在非发表用途的 FineWeb-Edu 小代理集上做 32 步工程诊断，随后必须用固定快照、文档互斥验证集、多种子及足够长的训练比较 D-C/C-B 的 NLL—GPU 时曲线。当前没有 Qwen 训练结果；代理集短训也不能证明架构有效。命令、版本与完整判据见 [实验规格](ljj/EXPERIMENT.md)。
 
 主指标为**验证损失—GPU 时曲线**，并报告实际通信字节、HBM 中间张量、吞吐与显存。10% 吞吐提升是目标，不是已获得的结果。
 
-- [路线图](ROADMAP.md)／[完整实验配置](docs/EXPERIMENT.md)
-- [议题一：环境与正确性](https://github.com/inaniloquentee/h20-multistream-moe/issues/1)
-- [议题二：四组消融](https://github.com/inaniloquentee/h20-multistream-moe/issues/2)
-- [议题三：通信与多流读写优化](https://github.com/inaniloquentee/h20-multistream-moe/issues/3)
+- [路线图](ROADMAP.md)／[可执行实验规格](ljj/EXPERIMENT.md)
+- [议题一：环境与正确性](https://github.com/inaniloquentee/Multistream-MoE/issues/1)
+- [议题二：四组消融](https://github.com/inaniloquentee/Multistream-MoE/issues/2)
+- [议题三：通信与多流读写优化](https://github.com/inaniloquentee/Multistream-MoE/issues/3)
 
 ## 五、已有工作与贡献边界
 
@@ -191,6 +195,8 @@ B\widetilde Z=P(W\widetilde Z).
 2. [mHC 原论文](https://arxiv.org/abs/2512.24880)：多流残差、双随机约束及相应系统优化的来源，不照搬为本方案的全网络稳定性证明。
 3. [DeepEP 官方实现](https://github.com/deepseek-ai/DeepEP)：专家派发／回传通信基线，使用前锁定版本及硬件要求。
 4. [Megatron Core 的 MoE 文档](https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/features/moe.html)：已有派发器、融合和共享专家重叠能力，必须纳入强基线。
+
+苏剑林《MoE环游记》讨论了 MoE 的几何解释和路由/负载均衡，但不提供此处**动态专家读写＋双随机残差**的定理。为避免把启发性博文误列为上述范数界或结构收益的证明，这一版不把它们加入理论依据；路由损失以实际采用的算法/实现为准。
 
 候选贡献是**专家特定读写结构与对应派发／写回路径的协同设计及实证收益**。完整相关工作检索、代码和消融完成前，不宣称首创或已优于现有方案。
 
