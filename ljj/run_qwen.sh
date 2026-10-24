@@ -9,6 +9,7 @@ DATA="${DATA:-$HERE/data/qwen-fineweb-proxy}"
 STEPS="${STEPS:-32}"
 cd "$HERE"
 mkdir -p results
+source "$HERE/use_transformers_fork.sh"
 for mode in dense A B C D; do
   "$PYTHON" train_qwen.py --mode "$mode" --seed 42 --steps "$STEPS" \
     --model "$MODEL" --data "$DATA" --n-experts 4 \

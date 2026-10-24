@@ -3,10 +3,12 @@
 import argparse
 import gc
 import json
+import os
 from pathlib import Path
 
 import numpy as np
 import torch
+import transformers
 from transformers import Qwen3ForCausalLM
 
 from qwen_reference import QwenMultiStream
@@ -18,6 +20,11 @@ def main():
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--modes", default="ABCD")
     args = parser.parse_args()
+    fork_root = os.environ.get("TRANSFORMERS_FORK_ROOT")
+    if fork_root and not Path(transformers.__file__).resolve().is_relative_to(Path(fork_root).resolve()):
+        raise RuntimeError(f"Transformers imported from {transformers.__file__}, not {fork_root}")
+    print(json.dumps({"transformers_source": str(Path(transformers.__file__).resolve()),
+                      "transformers_version": transformers.__version__}), flush=True)
     torch.set_num_threads(4)
     raw = np.memmap(args.data / "val.bin", dtype=np.uint32, mode="r")
     tokens = torch.tensor(raw[:8].astype(np.int64))[None, :]

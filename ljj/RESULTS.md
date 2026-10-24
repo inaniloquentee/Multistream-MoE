@@ -2,13 +2,15 @@
 
 ## 环境和复现
 
-远端目录 `/home/ljj/Multistream-MoE/ljj`；Python `/home/ljj/vllm-pr-59863/.venv/bin/python3`，PyTorch `2.14.0+cu130`，Transformers `5.19.0`。Qwen 路径直接使用官方 Transformers 的 `Qwen3ForCausalLM` 和 SDPA，不依赖 nanoGPT；小从零训练参考才需要 `NANOGPT_PATH`（本次 checkout `3adf61e154c3fe3fca428ad6bc3818b27a3b8291`）。测试运行于远端头节点 CPU，BF16 小配置检查调用头节点 A10，并非 H20 的 Qwen 训练结果。
+远端目录 `/home/ljj/Multistream-MoE/ljj`；Python `/home/ljj/vllm-pr-59863/.venv/bin/python3`，PyTorch `2.14.0+cu130`。Transformers fork `https://github.com/inaniloquentee/transformers.git` 的实验分支固定提交 `c4c4605f961877852b89b97478536bb3a26b6fd1`（上游 `v5.19.0`）；实测 import 路径 `/home/ljj/Multistream-MoE/ljj/_upstream/transformers/src/transformers/__init__.py`，版本 `5.19.0`。Qwen 路径复用该 fork 的 `Qwen3ForCausalLM` 和 SDPA，不依赖 nanoGPT；小从零训练参考才需要已有 nanoGPT fork（本次 checkout `3adf61e154c3fe3fca428ad6bc3818b27a3b8291`）。测试运行于远端头节点 CPU，BF16 小配置检查调用头节点 A10，并非 H20 的 Qwen 训练结果。
 
 权重/tokenizer：`Qwen/Qwen3-0.6B-Base`，revision `da87bfb608c14b7cf20ba1ce41287e8de496c0cd`。工程数据：FineWeb-Edu `sample-10BT` viewer 前 1000 行，观察到的 dataset revision `87f09149ef4734204d70ed1d046ddc9ca3f2b8f9`；892/108 个互斥文档，939516/123095 个训练/验证 token；`train.bin` SHA256 `8b79ff0bb57f740ece99de3ebd137780a5f6d5f35b5080d41db143191e1f148e`，`val.bin` SHA256 `564f624077ff668dea3d87bd65f2faa5c6dc9b2a25a2491091dc911db2b249d2`。这些哈希验证本次输入，但 viewer 不是锁定快照，不可用作正式质量比较。
 
 ```bash
 cd /home/ljj/Multistream-MoE/ljj
 PYTHON=/home/ljj/vllm-pr-59863/.venv/bin/python3
+bash bootstrap_transformers.sh
+source use_transformers_fork.sh
 $PYTHON -m unittest -v test_qwen
 $PYTHON check_qwen_checkpoint.py --model cache/qwen3-0.6b-base --data data/qwen-fineweb-proxy --modes ABCD
 NANOGPT_PATH="$PWD/_upstream/nanoGPT" $PYTHON -m unittest -v test_reference

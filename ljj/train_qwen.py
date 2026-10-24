@@ -3,11 +3,13 @@
 import argparse
 import json
 import math
+import os
 import time
 from pathlib import Path
 
 import numpy as np
 import torch
+import transformers
 from torch.nn import functional as F
 from transformers import Qwen3ForCausalLM
 
@@ -43,6 +45,9 @@ def main():
     parser.add_argument("--eval-every", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-5)
     args = parser.parse_args()
+    fork_root = os.environ.get("TRANSFORMERS_FORK_ROOT")
+    if fork_root and not Path(transformers.__file__).resolve().is_relative_to(Path(fork_root).resolve()):
+        raise RuntimeError(f"Transformers imported from {transformers.__file__}, not {fork_root}")
     if args.steps < 2 or args.eval_batches < 1 or args.eval_every < 1:
         raise ValueError("Need at least two steps and positive evaluation settings")
     if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
@@ -87,7 +92,9 @@ def main():
     print(json.dumps({"mode": args.mode, "seed": args.seed, "step": 0,
                       "val_nll": initial, "lift_max_abs": lift_error,
                       "params": sum(p.numel() for p in model.parameters()),
-                      "gpu": torch.cuda.get_device_name(0)}), flush=True)
+                      "gpu": torch.cuda.get_device_name(0),
+                      "transformers_source": str(Path(transformers.__file__).resolve()),
+                      "transformers_version": transformers.__version__}), flush=True)
     torch.cuda.reset_peak_memory_stats()
     train_elapsed = 0.0
     start = time.monotonic()

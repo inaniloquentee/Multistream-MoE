@@ -180,7 +180,9 @@ B\widetilde Z=P(W\widetilde Z).
 
 先按固定数据跑每组 1,000 步排错；扩展轮从头按 10,000 步的日程、多种子验证后，再判断 D 对 C（独立读取增量）与 C 对 B（独立写回增量）。A 是单流成本参照，不把 A/B 的差异归因于专家特定读写。系统优化保持同一 D 权重、路由与计算语义；基线也开启适用的通用优化。
 
-**优先的预训练模型检验：** 另设 Qwen3-0.6B-Base warm-start 轨道，直接复用 Transformers 的权重、注意力和 tokenizer，将隔层 MLP 提升为共享专家＋Top-2 专家。原始 dense Qwen、同权重提升的普通 MoE A、B/C/D 五组使用相同数据窗口、优化设置和预算。初始化时每个复制专家的输出投影减半，因此共享输出加归一化路由输出精确恢复原 MLP；这是可比起点，不是性能收益。先在非发表用途的 FineWeb-Edu 小代理集上做 32 步工程诊断，随后必须用固定快照、文档互斥验证集、多种子及足够长的训练比较 D-C/C-B 的 NLL—GPU 时曲线。当前没有 Qwen 训练结果；代理集短训也不能证明架构有效。命令、版本与完整判据见 [实验规格](ljj/EXPERIMENT.md)。
+**优先的预训练模型检验：** 另设 Qwen3-0.6B-Base warm-start 轨道，复用官方 Qwen 权重和 tokenizer，以及 Transformers 的注意力、RoPE、RMSNorm 与 MLP，将隔层 MLP 提升为共享专家＋Top-2 专家。原始 dense Qwen、同权重提升的普通 MoE A、B/C/D 五组使用相同数据窗口、优化设置和预算。初始化时每个复制专家的输出投影减半，因此共享输出加归一化路由输出精确恢复原 MLP；这是可比起点，不是性能收益。先在非发表用途的 FineWeb-Edu 小代理集上做 32 步工程诊断，随后必须用固定快照、文档互斥验证集、多种子及足够长的训练比较 D-C/C-B 的 NLL—GPU 时曲线。当前没有 Qwen 训练结果；代理集短训也不能证明架构有效。命令、版本与完整判据见 [实验规格](ljj/EXPERIMENT.md)。
+
+框架来源：[Transformers fork](https://github.com/inaniloquentee/transformers/tree/ljj/qwen3-0.6b-validation) 固定于上游 `v5.19.0` 的 `c4c4605f961877852b89b97478536bb3a26b6fd1`；`ljj/bootstrap_transformers.sh` 在 `ljj/_upstream/` 下载并校验，`ljj/use_transformers_fork.sh` 让运行时加载 fork 的 `src`。小模型参考使用已有的 [nanoGPT fork](https://github.com/inaniloquentee/nanoGPT)，不属于 Qwen 主路径。两个 fork 保留原框架代码和历史；本仓库只维护实验适配层，不复制整套框架源码。
 
 主指标为**验证损失—GPU 时曲线**，并报告实际通信字节、HBM 中间张量、吞吐与显存。10% 吞吐提升是目标，不是已获得的结果。
 

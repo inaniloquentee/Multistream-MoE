@@ -48,7 +48,12 @@ def main():
     root = Path(__file__).resolve().parent
     os.environ.setdefault("HF_HOME", str(root / "cache"))
     from huggingface_hub import HfApi, snapshot_download
+    import transformers
     from transformers import AutoTokenizer
+
+    fork_root = os.environ.get("TRANSFORMERS_FORK_ROOT")
+    if fork_root and not Path(transformers.__file__).resolve().is_relative_to(Path(fork_root).resolve()):
+        raise RuntimeError(f"Transformers imported from {transformers.__file__}, not {fork_root}")
 
     model_dir = root / "cache/qwen3-0.6b-base"
     snapshot_download(repo_id=MODEL, revision=MODEL_REVISION, local_dir=str(model_dir),
