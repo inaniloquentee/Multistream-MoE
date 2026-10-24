@@ -1,0 +1,16 @@
+# 本地环境与凭据
+.env
+.env.*
+*.pem
+*token*.txt
+__pycache__/
+.venv/
+
+# 数据、权重与运行产物
+data/
+checkpoints/
+runs/
+wandb/
+*.pt
+*.pth
+*.safetensors
