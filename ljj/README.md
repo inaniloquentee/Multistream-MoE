@@ -39,3 +39,7 @@ submit `scripts/run_qwen_contrast.sh`. Both are H20 Slurm jobs using the same
 pinned data. The measured mechanism results and raw JSONL are in `MECHANISM.md`
 and `evidence/h20-2026-10-27/mechanism/`. These single-seed probes do not replace
 the preregistered longer paired comparison.
+
+The first theory-to-warm-start mismatch is isolated with
+`scripts/run_theory_gap.sh`; see `FIRST_GAP.md` and its H20 forward-only log in
+`evidence/h20-2026-10-27/theory-gap/`.

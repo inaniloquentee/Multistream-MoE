@@ -1,5 +1,7 @@
 # H20 机制排查：为什么表达能力增加却没有质量收益
 
+初始化处的第一个理论/实验断点及真实 checkpoint 的 FP32 代数检查见 [FIRST_GAP.md](FIRST_GAP.md)。
+
 2026-10-27，在同一固定 FineWeb-Edu Parquet shard、Qwen3-0.6B-Base checkpoint、Transformers fork 和 H20-3e `vllm-sgp-h20-03` 上做两项**探索性**实验。Slurm 作业 `2935`（`COMPLETED 0:0`，`00:06:44`）重现种子 42 的原始 D，末步完整 128 窗口 NLL `3.1281618`，与先前日志一致；作业 `2938`（`COMPLETED 0:0`，`00:12:45`）用同种子和窗口成对训练增强流对比的 C/D。两项仍是 1,000 步、batch 2、seq 128、256,000 训练 token、100 步预热、`1e-5` 余弦学习率和 BF16；除初始化流对比外不改模型和训练日程。原始 JSONL 与作业日志在 `evidence/h20-2026-10-27/mechanism/`，脚本为 `scripts/run_qwen_diagnostics.sh` 和 `scripts/run_qwen_contrast.sh`。数据、模型及框架提交与 `RESULTS.md` 固定快照实验相同。
 
 ## 可检验的机制
