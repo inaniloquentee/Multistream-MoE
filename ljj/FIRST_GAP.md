@@ -1,5 +1,7 @@
 # 理论到实验的第一处断点
 
+对这一断点的初始化修复及后续目标收益检查见 `SECOND_GAP.md`。
+
 本页只定位**初始化到第二个 MoE 入口**的第一处差异，不声称解释 1,000 步后的全部质量结果。复现代码为 `experiments/check_theory_gap.py`、`scripts/run_theory_gap.sh`；原始 H20 输出在 `evidence/h20-2026-10-27/theory-gap/`。Slurm 作业 `2943` 于 `vllm-sgp-h20-03` 完成（`COMPLETED 0:0`，`00:00:45`）；使用与 `RESULTS.md` 一样固定的 Qwen3-0.6B-Base、Transformers fork、Parquet 验证数据，FP32、batch 2、序列 128。只做前向，不重训。
 
 ## 先区分两种理论命题

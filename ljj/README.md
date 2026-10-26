@@ -43,3 +43,8 @@ the preregistered longer paired comparison.
 The first theory-to-warm-start mismatch is isolated with
 `scripts/run_theory_gap.sh`; see `FIRST_GAP.md` and its H20 forward-only log in
 `evidence/h20-2026-10-27/theory-gap/`.
+
+The optional algorithm-level read initialization and the next gap between
+effective expert reads and held-out quality are tested with
+`scripts/run_qwen_read_init.sh` and `scripts/run_initial_read_direction.sh`;
+see `SECOND_GAP.md` and `evidence/h20-2026-10-27/read-init/`.

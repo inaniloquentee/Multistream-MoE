@@ -14,7 +14,9 @@ from torch.nn import functional as F
 from transformers import Qwen3ForCausalLM
 
 from multistream_moe.qwen_reference import QwenMultiStream
-from experiments.qwen_diagnostics import diagnose, gradient_probe, set_initial_stream_contrast
+from experiments.qwen_diagnostics import (diagnose, gradient_probe,
+                                          set_initial_expert_read_contrast,
+                                          set_initial_stream_contrast)
 
 
 def get_batch(data, rng, batch_size, length, device):
@@ -77,12 +79,17 @@ def main():
     parser.add_argument("--diagnostic-windows", type=int, default=32)
     parser.add_argument("--initial-stream-contrast", type=float, default=0.01,
                         help="Write multipliers [1+3c,1-c,1-c,1-c]; default c=0.01")
+    parser.add_argument("--initial-expert-read-contrast", type=float, default=0,
+                        help="D-only nonuniform expert read initialization; zero preserves exact lift")
     args = parser.parse_args()
     if args.diagnose and (args.mode != "D" or not 1 <= args.diagnostic_windows <= args.eval_batches):
         raise ValueError("Diagnostics require mode D and 1..eval-batches diagnostic windows")
     if args.initial_stream_contrast != 0.01 and (args.mode in ("dense", "A") or
                                                   not 0 < args.initial_stream_contrast < 1 / 3):
         raise ValueError("Non-default stream contrast requires B/C/D and 0 < c < 1/3")
+    if args.initial_expert_read_contrast and (args.mode != "D" or
+                                               not 0 < args.initial_expert_read_contrast <= 1):
+        raise ValueError("Read contrast requires D and 0 < contrast <= 1")
     fork_root = os.environ.get("TRANSFORMERS_FORK_ROOT")
     if fork_root and not Path(transformers.__file__).resolve().is_relative_to(Path(fork_root).resolve()):
         raise RuntimeError(f"Transformers imported from {transformers.__file__}, not {fork_root}")
@@ -113,6 +120,12 @@ def main():
     lift_error = (original - lifted).abs().max().item()
     if lift_error > 1e-3:
         raise RuntimeError(f"Qwen warm-start lift mismatch: {lift_error}")
+    initial_logits_delta = 0.0
+    if args.initial_expert_read_contrast:
+        set_initial_expert_read_contrast(model, args.initial_expert_read_contrast)
+        with torch.no_grad():
+            perturbed = forward_batch(model, args.mode, probe, probe)[0]
+        initial_logits_delta = (original - perturbed).abs().max().item()
     del original, lifted
     model = model.cuda().train()
     decay = [p for p in model.parameters() if p.requires_grad and p.ndim >= 2]
@@ -133,6 +146,8 @@ def main():
     print(json.dumps({"mode": args.mode, "seed": args.seed, "step": 0,
                       "val_nll": initial, "lift_max_abs": lift_error,
                       "initial_stream_contrast": args.initial_stream_contrast,
+                      "initial_expert_read_contrast": args.initial_expert_read_contrast,
+                      "initial_logits_max_abs_delta": initial_logits_delta,
                       "params": sum(p.numel() for p in model.parameters()),
                       "gpu": torch.cuda.get_device_name(0),
                       "transformers_source": str(Path(transformers.__file__).resolve()),

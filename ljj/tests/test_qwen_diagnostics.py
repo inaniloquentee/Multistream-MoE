@@ -6,6 +6,7 @@ import torch
 from transformers import Qwen3Config, Qwen3ForCausalLM
 
 from experiments.qwen_diagnostics import (activation_probe, diagnose, replace_maps,
+                                          set_initial_expert_read_contrast,
                                           set_initial_stream_contrast)
 from experiments.train_qwen import forward_batch
 from multistream_moe.qwen_reference import QwenMultiStream
@@ -53,6 +54,26 @@ class DiagnosticTests(unittest.TestCase):
             new_signal = activation_probe(self.model, self.tokens, "fp32")["3"]["input_centered_rms"]
         torch.testing.assert_close(after, before, atol=2e-4, rtol=2e-4)
         self.assertGreater(new_signal, 15 * original_signal)
+
+    def test_expert_read_seed_opens_second_layer_only(self):
+        set_initial_stream_contrast(self.model, 0.2)
+        baseline = activation_probe(self.model, self.tokens, "fp32")
+        self.assertEqual(baseline["3"]["read_expert_delta_rms"], 0)
+        set_initial_expert_read_contrast(self.model, 0.25)
+        seeded = activation_probe(self.model, self.tokens, "fp32")
+        self.assertLess(seeded["1"]["read_expert_delta_rms"], 1e-7)
+        self.assertGreater(seeded["3"]["read_signal_fp32_same_input_rms"], 0)
+        self.assertAlmostEqual(seeded["3"]["read_signal_fp32_same_input_rms"],
+                               seeded["3"]["read_expert_delta_rms"], places=5)
+        with self.assertRaisesRegex(ValueError, "before training"):
+            set_initial_expert_read_contrast(self.model, 0.25)
+
+    def test_failed_seed_does_not_partially_update_other_layers(self):
+        with torch.no_grad():
+            self.model.moes["3"].read_weight[1, 0, 0] = 1
+        with self.assertRaisesRegex(ValueError, "before training"):
+            set_initial_expert_read_contrast(self.model, 0.25)
+        self.assertEqual(self.model.moes["1"].read_bias.count_nonzero().item(), 0)
 
 
 if __name__ == "__main__":

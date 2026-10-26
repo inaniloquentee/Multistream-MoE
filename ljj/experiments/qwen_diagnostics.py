@@ -23,6 +23,24 @@ def set_initial_stream_contrast(model, contrast):
             moe.write_bias.copy_(torch.logit(values / 2).expand_as(moe.write_bias))
 
 
+def set_initial_expert_read_contrast(model, contrast):
+    """Seed D's routed reads along the warm-start stream contrast direction."""
+    moes = list(model.moes.values())
+    if (model.mode != "D" or model.streams != 4 or not moes or
+            any(moe.n_experts != 4 for moe in moes)):
+        raise ValueError("Require four-stream D with four routed experts")
+    if not 0 < contrast <= 1:
+        raise ValueError("Require 0 < read contrast <= 1")
+    with torch.no_grad():
+        if any(moe.read_weight.count_nonzero().item() or moe.read_bias.count_nonzero().item()
+               for moe in moes):
+            raise ValueError("Read contrast must be applied before training")
+        for moe in moes:
+            direction = moe.read_bias.new_tensor([3, -1, -1, -1])
+            scales = moe.read_bias.new_tensor([0, -1, -1 / 3, 1 / 3, 1])
+            moe.read_bias.copy_(scales[:, None] * contrast * direction[None, :])
+
+
 @contextmanager
 def replace_maps(model, kind, replacement):
     """Temporarily ablate D's read maps or C/D's write maps in place."""
