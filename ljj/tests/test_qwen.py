@@ -25,6 +25,7 @@ class QwenReferenceTests(unittest.TestCase):
         model = QwenMultiStream(copy.deepcopy(self.base), "D").cuda().eval()
         metrics = mechanism_metrics(model, "D", self.tokens.cuda())
         self.assertEqual(metrics["second_read_expert_weight_rms"], 0)
+        self.assertEqual(metrics["second_read_expert_bias_rms"], 0)
         self.assertEqual(metrics["second_write_expert_weight_rms"], 0)
         self.assertGreater(metrics["final_stream_centered_rms"], 0)
 

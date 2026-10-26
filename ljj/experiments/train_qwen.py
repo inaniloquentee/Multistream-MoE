@@ -41,11 +41,12 @@ def learning_rate(base_lr, step, steps, warmup_steps):
     return base_lr * (0.1 + 0.9 * (1 + math.cos(math.pi * progress)) / 2)
 
 
-def mechanism_metrics(model, mode, tokens):
+def mechanism_metrics(model, mode, tokens, precision="bf16"):
     if mode == "dense":
         return {}
     model.eval()
-    with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+    with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16,
+                                        enabled=precision == "bf16"):
         streams = model(tokens)[3].float()
     centered = streams - streams.mean(dim=2, keepdim=True)
     second = model.moes["3"]
@@ -56,8 +57,55 @@ def mechanism_metrics(model, mode, tokens):
     return {"final_stream_centered_rms": centered.square().mean().sqrt().item(),
             "second_read_expert_weight_rms": (expert_rms(second.read_weight)
                                                if mode != "A" else 0.0),
+            "second_read_expert_bias_rms": (expert_rms(second.read_bias)
+                                             if mode != "A" else 0.0),
             "second_write_expert_weight_rms": (expert_rms(second.write_weight)
                                                 if mode != "A" else 0.0)}
+
+
+def freeze_except_read_maps(model, selection):
+    """Keep the Qwen trunk, experts, router, mixing, and writes fixed."""
+    if selection not in ("bias", "all") or getattr(model, "mode", None) not in ("C", "D"):
+        raise ValueError("Read-only training requires C/D and bias or all")
+    model.requires_grad_(False)
+    for moe in model.moes.values():
+        moe.read_bias.requires_grad_(True)
+        if selection == "all":
+            moe.read_weight.requires_grad_(True)
+
+
+def specialist_parameters(model):
+    """Only routed experts and their routers; the shared expert remains frozen."""
+    if getattr(model, "mode", None) not in ("C", "D"):
+        raise ValueError("Specialist training requires C/D")
+    selected = {}
+    for layer, moe in model.moes.items():
+        routed = tuple(f"experts.{j}." for j in range(1, moe.n_experts + 1))
+        for name, param in moe.named_parameters():
+            if name.startswith("router.") or name.startswith(routed):
+                selected[f"moes.{layer}.{name}"] = param
+    return selected
+
+
+def freeze_except_specialists(model):
+    selected = specialist_parameters(model)
+    model.requires_grad_(False)
+    for param in selected.values():
+        param.requires_grad_(True)
+
+
+def load_specialists(model, checkpoint, stream_contrast):
+    selected = specialist_parameters(model)
+    if (checkpoint.get("source_mode") != "C" or
+            checkpoint.get("initial_stream_contrast") != stream_contrast or
+            set(checkpoint.get("parameters", {})) != set(selected)):
+        raise ValueError("Specialist checkpoint has a mismatched C architecture or stream contrast")
+    with torch.no_grad():
+        for name, param in selected.items():
+            tensor = checkpoint["parameters"][name]
+            if tensor.shape != param.shape or tensor.dtype != param.dtype:
+                raise ValueError(f"Specialist checkpoint shape/dtype mismatch: {name}")
+            param.copy_(tensor)
 
 
 def main():
@@ -73,6 +121,8 @@ def main():
     parser.add_argument("--eval-batches", type=int, default=8)
     parser.add_argument("--eval-every", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-5)
+    parser.add_argument("--aux-weight", type=float, default=0.01,
+                        help="Router load-balancing term; use zero for an NLL-only read-map ablation")
     parser.add_argument("--warmup-steps", type=int, default=0)
     parser.add_argument("--diagnose", action="store_true",
                         help="Measure D read/write counterfactuals on fixed validation windows")
@@ -83,6 +133,16 @@ def main():
                         help="D-only nonuniform expert read initialization; zero preserves exact lift")
     parser.add_argument("--fp32-read", action="store_true",
                         help="C/D-only FP32 read weights and accumulation under BF16 autocast")
+    parser.add_argument("--train-read-maps-only", choices=["bias", "all"],
+                        help="Freeze all but C/D read biases or the complete read maps")
+    parser.add_argument("--forward-precision", choices=["bf16", "fp32"], default="bf16",
+                        help="Use BF16 autocast (default) or FP32 for the entire train/eval forward")
+    parser.add_argument("--train-specialists-only", action="store_true",
+                        help="Freeze all except routed experts and routers in C")
+    parser.add_argument("--save-specialists", type=Path,
+                        help="Save only the trained C routed experts and routers")
+    parser.add_argument("--load-specialists", type=Path,
+                        help="Start C/D from identical pretrained routed experts and routers")
     args = parser.parse_args()
     if args.diagnose and (args.mode != "D" or not 1 <= args.diagnostic_windows <= args.eval_batches):
         raise ValueError("Diagnostics require mode D and 1..eval-batches diagnostic windows")
@@ -94,12 +154,23 @@ def main():
         raise ValueError("Read contrast requires D and 0 < contrast <= 1")
     if args.fp32_read and args.mode not in ("C", "D"):
         raise ValueError("FP32 read comparison requires C or D")
+    if args.train_read_maps_only and (args.mode not in ("C", "D") or not args.fp32_read):
+        raise ValueError("Read-only comparison requires C/D and --fp32-read")
+    if args.train_specialists_only and (args.mode != "C" or args.train_read_maps_only or
+                                        args.load_specialists):
+        raise ValueError("Specialist preparation requires C without a read-only/load flag")
+    if args.save_specialists and not args.train_specialists_only:
+        raise ValueError("Saving specialists requires --train-specialists-only")
+    if args.load_specialists and not args.train_read_maps_only:
+        raise ValueError("Loading specialists requires read-only C/D training")
     fork_root = os.environ.get("TRANSFORMERS_FORK_ROOT")
     if fork_root and not Path(transformers.__file__).resolve().is_relative_to(Path(fork_root).resolve()):
         raise RuntimeError(f"Transformers imported from {transformers.__file__}, not {fork_root}")
     if (args.steps < 2 or args.eval_batches < 1 or args.eval_every < 1 or
             not 0 <= args.warmup_steps < args.steps):
         raise ValueError("Need at least two steps and positive evaluation settings")
+    if not math.isfinite(args.aux_weight) or args.aux_weight < 0:
+        raise ValueError("Auxiliary weight must be finite and nonnegative")
     if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
         raise RuntimeError("BF16 CUDA device required")
     train = np.memmap(args.data / "train.bin", mode="r", dtype=np.uint32)
@@ -133,6 +204,13 @@ def main():
     if args.fp32_read:
         for moe in model.moes.values():
             moe.fp32_read = True
+    if args.load_specialists:
+        checkpoint = torch.load(args.load_specialists, map_location="cpu", weights_only=True)
+        load_specialists(model, checkpoint, args.initial_stream_contrast)
+    if args.train_read_maps_only:
+        freeze_except_read_maps(model, args.train_read_maps_only)
+    elif args.train_specialists_only:
+        freeze_except_specialists(model)
     del original, lifted
     model = model.cuda().train()
     decay = [p for p in model.parameters() if p.requires_grad and p.ndim >= 2]
@@ -144,7 +222,8 @@ def main():
 
     def evaluate():
         model.eval()
-        with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+        with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16,
+                                            enabled=args.forward_precision == "bf16"):
             losses = [forward_batch(model, args.mode, x, y)[1].item() for x, y in validation]
         model.train()
         return sum(losses) / len(losses)
@@ -156,7 +235,13 @@ def main():
                       "initial_expert_read_contrast": args.initial_expert_read_contrast,
                       "initial_logits_max_abs_delta": initial_logits_delta,
                       "fp32_read": args.fp32_read,
+                      "forward_precision": args.forward_precision,
+                      "train_read_maps_only": args.train_read_maps_only,
+                      "train_specialists_only": args.train_specialists_only,
+                      "aux_weight": args.aux_weight,
+                      "load_specialists": str(args.load_specialists) if args.load_specialists else None,
                       "params": sum(p.numel() for p in model.parameters()),
+                      "trainable_params": sum(p.numel() for p in model.parameters() if p.requires_grad),
                       "gpu": torch.cuda.get_device_name(0),
                       "transformers_source": str(Path(transformers.__file__).resolve()),
                       "transformers_version": transformers.__version__}), flush=True)
@@ -174,9 +259,10 @@ def main():
             group["lr"] = lr
         x, y = get_batch(train, train_rng, args.batch_size, args.seq_len, "cuda")
         optimizer.zero_grad(set_to_none=True)
-        with torch.autocast("cuda", dtype=torch.bfloat16):
+        with torch.autocast("cuda", dtype=torch.bfloat16,
+                            enabled=args.forward_precision == "bf16"):
             _, loss, aux = forward_batch(model, args.mode, x, y)
-            total = loss + 0.01 * aux
+            total = loss + args.aux_weight * aux
         if not torch.isfinite(total):
             raise RuntimeError(f"Non-finite loss at step {step}")
         total.backward()
@@ -194,7 +280,8 @@ def main():
                               "last_train_nll": loss.item(), "last_grad_norm": norm.item(),
                               "peak_allocated_bytes": torch.cuda.max_memory_allocated()}
             if step + 1 == args.steps:
-                record["mechanism"] = mechanism_metrics(model, args.mode, validation[0][0])
+                record["mechanism"] = mechanism_metrics(model, args.mode, validation[0][0],
+                                                         args.forward_precision)
                 if args.diagnose:
                     record["diagnostic"] = diagnose(model, args.mode,
                                                     validation[:args.diagnostic_windows],
@@ -204,6 +291,13 @@ def main():
                                                          forward_batch, precision="fp32")
             print(json.dumps(record), flush=True)
             start = time.monotonic()
+    if args.save_specialists:
+        selected = specialist_parameters(model)
+        args.save_specialists.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({"source_mode": "C", "seed": args.seed, "steps": args.steps,
+                    "initial_stream_contrast": args.initial_stream_contrast,
+                    "parameters": {name: param.detach().cpu() for name, param in selected.items()}},
+                   args.save_specialists)
 
 
 if __name__ == "__main__":

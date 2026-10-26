@@ -1,5 +1,6 @@
 """Small causal-probe checks independent of the H20 checkpoint."""
 
+import copy
 import unittest
 
 import torch
@@ -8,7 +9,9 @@ from transformers import Qwen3Config, Qwen3ForCausalLM
 from experiments.qwen_diagnostics import (activation_probe, diagnose, replace_maps,
                                           set_initial_expert_read_contrast,
                                           set_initial_stream_contrast)
-from experiments.train_qwen import forward_batch
+from experiments.train_qwen import (forward_batch, freeze_except_read_maps,
+                                    freeze_except_specialists, load_specialists,
+                                    specialist_parameters)
 from multistream_moe.qwen_reference import QwenMultiStream
 
 
@@ -74,6 +77,49 @@ class DiagnosticTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "before training"):
             set_initial_expert_read_contrast(self.model, 0.25)
         self.assertEqual(self.model.moes["1"].read_bias.count_nonzero().item(), 0)
+
+    def test_read_only_freezes_all_except_requested_maps(self):
+        for selection in ("bias", "all"):
+            with self.subTest(selection=selection):
+                model = QwenMultiStream(Qwen3ForCausalLM(self.model.base.config), "D")
+                freeze_except_read_maps(model, selection)
+                names = {name for name, param in model.named_parameters() if param.requires_grad}
+                expected = {f"moes.{layer}.read_bias" for layer in model.moes}
+                if selection == "all":
+                    expected |= {f"moes.{layer}.read_weight" for layer in model.moes}
+                self.assertEqual(names, expected)
+                _, loss, aux = forward_batch(model, "D", *self.validation[0])
+                (loss + 0.01 * aux).backward()
+                self.assertTrue(all(param.grad is None for name, param in model.named_parameters()
+                                    if name not in expected))
+                self.assertTrue(any(param.grad is not None for name, param in model.named_parameters()
+                                    if name in expected))
+
+    def test_specialist_state_can_initialize_both_matched_read_modes(self):
+        base = Qwen3ForCausalLM(self.model.base.config)
+        source = QwenMultiStream(copy.deepcopy(base), "C")
+        freeze_except_specialists(source)
+        selected = specialist_parameters(source)
+        self.assertTrue(selected)
+        self.assertTrue(all(".experts.0." not in name for name in selected))
+        self.assertTrue(any(".router." in name for name in selected))
+        self.assertTrue(all(p.requires_grad for p in selected.values()))
+        self.assertTrue(all(not p.requires_grad for n, p in source.named_parameters()
+                            if n not in selected))
+        with torch.no_grad():
+            next(iter(selected.values())).add_(0.02)
+        checkpoint = {"source_mode": "C", "initial_stream_contrast": 0.2,
+                      "parameters": {n: p.detach().clone() for n, p in selected.items()}}
+        outputs = []
+        for mode in ("C", "D"):
+            target = QwenMultiStream(copy.deepcopy(base), mode)
+            load_specialists(target, checkpoint, 0.2)
+            for name, param in specialist_parameters(target).items():
+                torch.testing.assert_close(param, checkpoint["parameters"][name])
+            outputs.append(target(self.tokens)[0])
+        torch.testing.assert_close(outputs[0], outputs[1], atol=2e-5, rtol=2e-5)
+        with self.assertRaisesRegex(ValueError, "mismatched"):
+            load_specialists(target, checkpoint, 0.01)
 
 
 if __name__ == "__main__":

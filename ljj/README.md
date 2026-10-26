@@ -54,3 +54,10 @@ C/D FP32-read training probe are in `TARGET_ALIGNMENT.md`; run
 `scripts/run_target_alignment.sh`, `scripts/run_read_precision.sh`, or
 `scripts/run_qwen_fp32_read_paired.sh`. Raw H20 logs are under
 `evidence/h20-2026-10-27/target-alignment/`.
+
+Frozen-trunk C/D read-map comparisons, a common routed-expert preparation
+stage, FP32 and auxiliary-loss ablations, and larger-sample checks are in
+`READ_ONLY.md`. Run the paired scripts under `scripts/run_qwen_read_only_*`
+or `scripts/run_qwen_specialist_*`; the raw logs are in
+`evidence/h20-2026-10-27/read-only/` and `specialist-read/`. The larger-sample
+paired diagnostic did not establish a reliable D-over-C quality gain.
