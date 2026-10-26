@@ -1,5 +1,7 @@
 # 验证记录（2026-10-25）
 
+2026-10-27 的 H20 读取通道机制排查、强流对比 C/D 配对消融和原始日志见 [MECHANISM.md](MECHANISM.md)；这是探索性诊断，不改变下文三种子预注册比较的结论。
+
 ## 环境和复现
 
 远端目录 `/home/ljj/Multistream-MoE/ljj`；Python `/home/ljj/vllm-pr-59863/.venv/bin/python3`，PyTorch `2.14.0+cu130`。Transformers fork `https://github.com/inaniloquentee/transformers.git` 的实验分支固定提交 `c4c4605f961877852b89b97478536bb3a26b6fd1`（上游 `v5.19.0`）；实测 import 路径 `/home/ljj/Multistream-MoE/ljj/_upstream/transformers/src/transformers/__init__.py`，版本 `5.19.0`。Qwen 路径复用该 fork 的 `Qwen3ForCausalLM` 和 SDPA，不依赖 nanoGPT；小从零训练参考才需要已有 nanoGPT fork（本次 checkout `3adf61e154c3fe3fca428ad6bc3818b27a3b8291`）。测试运行于远端头节点 CPU，BF16 小配置检查调用头节点 A10，并非 H20 的 Qwen 训练结果。

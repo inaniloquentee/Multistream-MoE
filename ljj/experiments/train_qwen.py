@@ -14,6 +14,7 @@ from torch.nn import functional as F
 from transformers import Qwen3ForCausalLM
 
 from multistream_moe.qwen_reference import QwenMultiStream
+from experiments.qwen_diagnostics import diagnose, gradient_probe, set_initial_stream_contrast
 
 
 def get_batch(data, rng, batch_size, length, device):
@@ -71,7 +72,17 @@ def main():
     parser.add_argument("--eval-every", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--warmup-steps", type=int, default=0)
+    parser.add_argument("--diagnose", action="store_true",
+                        help="Measure D read/write counterfactuals on fixed validation windows")
+    parser.add_argument("--diagnostic-windows", type=int, default=32)
+    parser.add_argument("--initial-stream-contrast", type=float, default=0.01,
+                        help="Write multipliers [1+3c,1-c,1-c,1-c]; default c=0.01")
     args = parser.parse_args()
+    if args.diagnose and (args.mode != "D" or not 1 <= args.diagnostic_windows <= args.eval_batches):
+        raise ValueError("Diagnostics require mode D and 1..eval-batches diagnostic windows")
+    if args.initial_stream_contrast != 0.01 and (args.mode in ("dense", "A") or
+                                                  not 0 < args.initial_stream_contrast < 1 / 3):
+        raise ValueError("Non-default stream contrast requires B/C/D and 0 < c < 1/3")
     fork_root = os.environ.get("TRANSFORMERS_FORK_ROOT")
     if fork_root and not Path(transformers.__file__).resolve().is_relative_to(Path(fork_root).resolve()):
         raise RuntimeError(f"Transformers imported from {transformers.__file__}, not {fork_root}")
@@ -95,6 +106,8 @@ def main():
     torch.manual_seed(args.seed)
     model = base if args.mode == "dense" else QwenMultiStream(base, args.mode,
                                                                n_experts=args.n_experts)
+    if args.mode in "BCD" and args.initial_stream_contrast != 0.01:
+        set_initial_stream_contrast(model, args.initial_stream_contrast)
     with torch.no_grad():
         lifted = forward_batch(model, args.mode, probe, probe)[0]
     lift_error = (original - lifted).abs().max().item()
@@ -119,10 +132,16 @@ def main():
     initial = evaluate()
     print(json.dumps({"mode": args.mode, "seed": args.seed, "step": 0,
                       "val_nll": initial, "lift_max_abs": lift_error,
+                      "initial_stream_contrast": args.initial_stream_contrast,
                       "params": sum(p.numel() for p in model.parameters()),
                       "gpu": torch.cuda.get_device_name(0),
                       "transformers_source": str(Path(transformers.__file__).resolve()),
                       "transformers_version": transformers.__version__}), flush=True)
+    if args.diagnose:
+        print(json.dumps({"mode": args.mode, "seed": args.seed, "step": 0,
+                          "diagnostic": diagnose(model, args.mode,
+                                                  validation[:args.diagnostic_windows],
+                                                  forward_batch)}), flush=True)
     torch.cuda.reset_peak_memory_stats()
     train_elapsed = 0.0
     start = time.monotonic()
@@ -138,6 +157,9 @@ def main():
         if not torch.isfinite(total):
             raise RuntimeError(f"Non-finite loss at step {step}")
         total.backward()
+        if args.diagnose and step in (0, 99, args.steps - 1):
+            print(json.dumps({"mode": args.mode, "seed": args.seed, "step": step + 1,
+                              "gradient_diagnostic": gradient_probe(model)}), flush=True)
         norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
         optimizer.step()
         if (step + 1) % args.eval_every == 0 or step + 1 == args.steps:
@@ -150,6 +172,13 @@ def main():
                               "peak_allocated_bytes": torch.cuda.max_memory_allocated()}
             if step + 1 == args.steps:
                 record["mechanism"] = mechanism_metrics(model, args.mode, validation[0][0])
+                if args.diagnose:
+                    record["diagnostic"] = diagnose(model, args.mode,
+                                                    validation[:args.diagnostic_windows],
+                                                    forward_batch)
+                    record["diagnostic_fp32"] = diagnose(model, args.mode,
+                                                         validation[:min(8, args.diagnostic_windows)],
+                                                         forward_batch, precision="fp32")
             print(json.dumps(record), flush=True)
             start = time.monotonic()
 

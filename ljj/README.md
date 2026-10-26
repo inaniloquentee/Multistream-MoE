@@ -32,3 +32,10 @@ installed PyArrow wheel in `_deps/`, and checks the source, tokenizer, split IDs
 and token binaries before training. The three-seed, 1,000-step pinned diagnostic
 completed without a stable D quality gain; see `RESULTS.md` and the raw logs in
 `evidence/`. The full 10,000-step, full-validation comparison and EP remain open.
+
+For causal read-map and BF16 activation diagnostics, submit
+`scripts/run_qwen_diagnostics.sh`; for the paired C/D stream-contrast intervention,
+submit `scripts/run_qwen_contrast.sh`. Both are H20 Slurm jobs using the same
+pinned data. The measured mechanism results and raw JSONL are in `MECHANISM.md`
+and `evidence/h20-2026-10-27/mechanism/`. These single-seed probes do not replace
+the preregistered longer paired comparison.
