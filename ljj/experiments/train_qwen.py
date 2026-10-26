@@ -81,6 +81,8 @@ def main():
                         help="Write multipliers [1+3c,1-c,1-c,1-c]; default c=0.01")
     parser.add_argument("--initial-expert-read-contrast", type=float, default=0,
                         help="D-only nonuniform expert read initialization; zero preserves exact lift")
+    parser.add_argument("--fp32-read", action="store_true",
+                        help="C/D-only FP32 read weights and accumulation under BF16 autocast")
     args = parser.parse_args()
     if args.diagnose and (args.mode != "D" or not 1 <= args.diagnostic_windows <= args.eval_batches):
         raise ValueError("Diagnostics require mode D and 1..eval-batches diagnostic windows")
@@ -90,6 +92,8 @@ def main():
     if args.initial_expert_read_contrast and (args.mode != "D" or
                                                not 0 < args.initial_expert_read_contrast <= 1):
         raise ValueError("Read contrast requires D and 0 < contrast <= 1")
+    if args.fp32_read and args.mode not in ("C", "D"):
+        raise ValueError("FP32 read comparison requires C or D")
     fork_root = os.environ.get("TRANSFORMERS_FORK_ROOT")
     if fork_root and not Path(transformers.__file__).resolve().is_relative_to(Path(fork_root).resolve()):
         raise RuntimeError(f"Transformers imported from {transformers.__file__}, not {fork_root}")
@@ -126,6 +130,9 @@ def main():
         with torch.no_grad():
             perturbed = forward_batch(model, args.mode, probe, probe)[0]
         initial_logits_delta = (original - perturbed).abs().max().item()
+    if args.fp32_read:
+        for moe in model.moes.values():
+            moe.fp32_read = True
     del original, lifted
     model = model.cuda().train()
     decay = [p for p in model.parameters() if p.requires_grad and p.ndim >= 2]
@@ -148,6 +155,7 @@ def main():
                       "initial_stream_contrast": args.initial_stream_contrast,
                       "initial_expert_read_contrast": args.initial_expert_read_contrast,
                       "initial_logits_max_abs_delta": initial_logits_delta,
+                      "fp32_read": args.fp32_read,
                       "params": sum(p.numel() for p in model.parameters()),
                       "gpu": torch.cuda.get_device_name(0),
                       "transformers_source": str(Path(transformers.__file__).resolve()),

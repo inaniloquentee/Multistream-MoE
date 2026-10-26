@@ -48,3 +48,9 @@ The optional algorithm-level read initialization and the next gap between
 effective expert reads and held-out quality are tested with
 `scripts/run_qwen_read_init.sh` and `scripts/run_initial_read_direction.sh`;
 see `SECOND_GAP.md` and `evidence/h20-2026-10-27/read-init/`.
+
+Train-only gradient directions, full-window precision isolation, and a paired
+C/D FP32-read training probe are in `TARGET_ALIGNMENT.md`; run
+`scripts/run_target_alignment.sh`, `scripts/run_read_precision.sh`, or
+`scripts/run_qwen_fp32_read_paired.sh`. Raw H20 logs are under
+`evidence/h20-2026-10-27/target-alignment/`.

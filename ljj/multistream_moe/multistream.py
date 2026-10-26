@@ -81,6 +81,7 @@ class MoE(nn.Module):
         self.streams = 1 if mode == "A" else cfg.n_streams
         self.n_experts = cfg.n_experts
         self.top_k = cfg.top_k
+        self.fp32_read = False
         self.mix = StreamMix(self.streams, cfg.n_embd)
         self.context_norm = nn.LayerNorm(cfg.n_embd, bias=False)
         self.router = nn.Linear(cfg.n_embd, cfg.n_experts, bias=False)
@@ -102,6 +103,11 @@ class MoE(nn.Module):
         if self.mode == "A":
             return x[:, 0, :]
         row = expert if self.mode == "D" else 0
+        if self.fp32_read:
+            with torch.autocast(device_type=x.device.type, enabled=False):
+                a = F.linear(context.float(), self.read_weight[row].float(),
+                             self.read_bias[row].float()).softmax(-1)
+                return torch.einsum("nsd,ns->nd", x.float(), a).to(x.dtype)
         a = F.linear(context, self.read_weight[row], self.read_bias[row]).softmax(-1)
         return torch.einsum("nsd,ns->nd", x, a.to(x.dtype))
 

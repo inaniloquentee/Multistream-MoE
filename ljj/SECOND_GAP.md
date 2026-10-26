@@ -1,5 +1,7 @@
 # 第二处断点：有效读取不等于目标收益
 
+训练 split 选方向、128 窗口目标对齐和选择性 FP32 读取试验见 `TARGET_ALIGNMENT.md`。
+
 这是对 `FIRST_GAP.md` 的**受控修复尝试**，不是新架构优于强基线的结论。第一处是算法/初始化问题：已有流差，但 D 的全部专家读映射初值相同。这里仅为 D 新增可选 `--initial-expert-read-contrast`，不改 Qwen/Transformers 的实现或 GPU kernel。代码、测试和 Slurm 脚本分别在 `experiments/qwen_diagnostics.py`、`experiments/train_qwen.py`、`tests/test_qwen_diagnostics.py`、`scripts/run_qwen_read_init.sh`。默认值仍为零，保留原有实验。原始 H20 JSONL 和作业日志在 `evidence/h20-2026-10-27/read-init/`。
 
 ## 修复第一处断点
