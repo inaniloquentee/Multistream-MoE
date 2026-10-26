@@ -19,4 +19,8 @@ $PYTHON -m experiments.check_qwen_checkpoint \
   --model cache/qwen3-0.6b-base --data data/qwen-fineweb-proxy
 ```
 
-For the H20 diagnostic, submit `scripts/run_qwen.sh` from this directory using the command in `RESULTS.md`. Cached weights, token data and raw logs remain local and ignored by Git. Current evidence is correctness-only; the H20 quality comparison remains blocked.
+For the H20 diagnostics, submit `scripts/run_qwen.sh` (32 steps) or
+`scripts/run_qwen_paired.sh` (1,000 steps, three seeds) from this directory.
+Measured results and the raw JSONL logs are in `RESULTS.md` and `evidence/`.
+Cached weights and token data remain local and ignored by Git. The proxy-data
+diagnostics do not establish a quality gain; fixed-snapshot Q2 and EP are open.

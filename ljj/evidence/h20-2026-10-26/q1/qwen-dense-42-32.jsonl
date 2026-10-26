@@ -1,0 +1,3 @@
+{"mode": "dense", "seed": 42, "step": 0, "val_nll": 3.4887884855270386, "lift_max_abs": 0.0, "params": 596049920, "gpu": "NVIDIA H20-3e", "transformers_source": "/home/ljj/Multistream-MoE/ljj/_upstream/transformers/src/transformers/__init__.py", "transformers_version": "5.19.0"}
+{"mode": "dense", "seed": 42, "step": 16, "val_nll": 3.5066940784454346, "train_elapsed_s": 2.6004935419914545, "last_train_nll": 3.757417678833008, "last_grad_norm": 36.533905029296875, "peak_allocated_bytes": 11033428992}
+{"mode": "dense", "seed": 42, "step": 32, "val_nll": 3.50208181142807, "train_elapsed_s": 3.7436835870030336, "last_train_nll": 2.2769625186920166, "last_grad_norm": 35.38309097290039, "peak_allocated_bytes": 11033428992}
