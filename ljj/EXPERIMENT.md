@@ -65,4 +65,4 @@ Y^+=R(Y)Y+b_s(Y)E_s(a_s(Y)Y)+\sum_{j\in Top2(Y)}g_j(Y)b_j(Y)E_j(a_j(Y)Y).
 
 ## 8. 当前交付状态
 
-`ljj/multistream_moe/multistream.py` 与 `ljj/experiments/train.py` 是单卡、无 EP 的从零训练参考和冒烟入口；`ljj/multistream_moe/qwen_reference.py` 与 `ljj/experiments/train_qwen.py` 是优先的 Qwen 路径。最小有效对照至少需要两层 MoE（当前隔层 MoE 即至少四层）：第一层的非均匀写回生成流差异，第二层的独立读取才能使用它；只有一层 MoE 的 C/D 比较是无效检验。H20 上的代理集 Q1 和额外的 1,000 步多种子诊断已完成，见 `ljj/RESULTS.md`；它们不满足固定快照 Q2，不能称为多种子质量结论。完整数据训练、EP 对照、自定义融合仍**未完成**。每次 PR 必须附实际命令、提交号、环境清单、原始日志及失败项，不以本规格代替实验结果。
+`ljj/multistream_moe/multistream.py` 与 `ljj/experiments/train.py` 是单卡、无 EP 的从零训练参考和冒烟入口；`ljj/multistream_moe/qwen_reference.py` 与 `ljj/experiments/train_qwen.py` 是优先的 Qwen 路径。最小有效对照至少需要两层 MoE（当前隔层 MoE 即至少四层）：第一层的非均匀写回生成流差异，第二层的独立读取才能使用它；只有一层 MoE 的 C/D 比较是无效检验。H20 上的代理集 Q1、额外代理集 1,000 步三种子诊断，以及固定 Parquet shard 的 1,000 步三种子诊断已完成，见 `ljj/RESULTS.md`；后者未达到探索性收益门槛。固定快照 10,000 步与全量验证、EP 对照、自定义融合仍**未完成**，不应称为最终多种子质量结论。每次 PR 必须附实际命令、提交号、环境清单、原始日志及失败项，不以本规格代替实验结果。

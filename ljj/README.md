@@ -29,4 +29,6 @@ The pinned-data diagnostic uses `scripts/prepare_pinned.sh` as a CPU-only Slurm
 job, then `scripts/run_qwen_pinned.sh` as a single-H20 job. Preparation downloads
 one exact FineWeb-Edu Parquet revision with Hugging Face Hub, uses a locally
 installed PyArrow wheel in `_deps/`, and checks the source, tokenizer, split IDs
-and token binaries before training. The exact protocol is in `EXPERIMENT.md`.
+and token binaries before training. The three-seed, 1,000-step pinned diagnostic
+completed without a stable D quality gain; see `RESULTS.md` and the raw logs in
+`evidence/`. The full 10,000-step, full-validation comparison and EP remain open.
