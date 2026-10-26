@@ -103,3 +103,9 @@ C−B 的三个配对差值是 `+0.001287、−0.000237、−0.000769`，平均 
 | D | 1,125,464,848 | 252.50 | 19.15 |
 
 循环时间剔除了验证与初次模型加载，不是端到端 wall-clock；单卡参考实现使用 Python 专家循环，不能把这里的吞吐差距解释为架构的最优 kernel 成本。没有保存训练 checkpoint、没有检查训练后读写系数的专家分化、没有全参数 FP32/BF16 逐张量梯度误差，也没有不可漂移的 FineWeb-Edu shard、完整验证集或预定的有效 batch/token 预算。因而结论仅限于 H20 上可执行、梯度有限、B/C/D 起点匹配，以及本次代理集未观察到稳定质量收益；Q2 和 EP 正确性/性能门槛仍待完成。
+
+## 固定 Parquet 快照准备（2026-10-26）
+
+CPU-only Slurm 作业 `2864` 在 `vllm-sgp-h20-06` 完成（`00:03:46`，退出码 `0:0`）。复用 Hugging Face Hub 下载 `HuggingFaceFW/fineweb-edu` commit `87f09149ef4734204d70ed1d046ddc9ca3f2b8f9` 的 `sample/10BT/000_00000.parquet`，源 SHA256 `b1ba7b2ce4cb5ea6ef42dca40263eabb85f37700d01693a68e9b30a31d78e871`。PyArrow `21.0.0` 安装在 `ljj/_deps/`，没有更改共享 Python 环境。按文档 ID 哈希切分并过滤全局精确重复后扫描 21,223 行：训练 19,089 文档、20,007,425 token；验证 2,133 文档、2,183,758 token；1 个重复文本被跳过，0 个重复 ID/空文档。`ljj/data/qwen-fineweb-pinned/manifest.json` 记录 tokenizer、源 shard、bin 和 ID 清单哈希；独立 `--verify-only` 校验已通过，5 项相关测试通过。
+
+首次 GPU 作业 `2870` 在预训练夹具测试阶段因启动脚本遗漏 `_deps` 导入路径失败，未执行训练（`FAILED 1:0`）；已修正 `scripts/run_qwen_pinned.sh` 并提交作业 `2871`。训练数值和结论以完成后的原始日志为准，不把正在运行的作业当作已完成结果。

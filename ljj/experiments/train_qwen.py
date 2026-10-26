@@ -31,6 +31,32 @@ def forward_batch(model, mode, tokens, targets):
     return logits, loss, loss.new_zeros(())
 
 
+def learning_rate(base_lr, step, steps, warmup_steps):
+    if step < warmup_steps:
+        return base_lr * (step + 1) / warmup_steps
+    progress = (step - warmup_steps) / max(1, steps - warmup_steps - 1)
+    return base_lr * (0.1 + 0.9 * (1 + math.cos(math.pi * progress)) / 2)
+
+
+def mechanism_metrics(model, mode, tokens):
+    if mode == "dense":
+        return {}
+    model.eval()
+    with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+        streams = model(tokens)[3].float()
+    centered = streams - streams.mean(dim=2, keepdim=True)
+    second = model.moes["3"]
+
+    def expert_rms(weight):
+        return (weight.float() - weight.float().mean(dim=0, keepdim=True)).square().mean().sqrt().item()
+
+    return {"final_stream_centered_rms": centered.square().mean().sqrt().item(),
+            "second_read_expert_weight_rms": (expert_rms(second.read_weight)
+                                               if mode != "A" else 0.0),
+            "second_write_expert_weight_rms": (expert_rms(second.write_weight)
+                                                if mode != "A" else 0.0)}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["dense", *list("ABCD")], required=True)
@@ -44,11 +70,13 @@ def main():
     parser.add_argument("--eval-batches", type=int, default=8)
     parser.add_argument("--eval-every", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-5)
+    parser.add_argument("--warmup-steps", type=int, default=0)
     args = parser.parse_args()
     fork_root = os.environ.get("TRANSFORMERS_FORK_ROOT")
     if fork_root and not Path(transformers.__file__).resolve().is_relative_to(Path(fork_root).resolve()):
         raise RuntimeError(f"Transformers imported from {transformers.__file__}, not {fork_root}")
-    if args.steps < 2 or args.eval_batches < 1 or args.eval_every < 1:
+    if (args.steps < 2 or args.eval_batches < 1 or args.eval_every < 1 or
+            not 0 <= args.warmup_steps < args.steps):
         raise ValueError("Need at least two steps and positive evaluation settings")
     if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
         raise RuntimeError("BF16 CUDA device required")
@@ -99,8 +127,7 @@ def main():
     train_elapsed = 0.0
     start = time.monotonic()
     for step in range(args.steps):
-        progress = step / max(1, args.steps - 1)
-        lr = args.lr * (0.1 + 0.9 * (1 + math.cos(math.pi * progress)) / 2)
+        lr = learning_rate(args.lr, step, args.steps, args.warmup_steps)
         for group in optimizer.param_groups:
             group["lr"] = lr
         x, y = get_batch(train, train_rng, args.batch_size, args.seq_len, "cuda")
@@ -117,10 +144,13 @@ def main():
             torch.cuda.synchronize()
             train_elapsed += time.monotonic() - start
             current = evaluate()
-            print(json.dumps({"mode": args.mode, "seed": args.seed, "step": step + 1,
+            record = {"mode": args.mode, "seed": args.seed, "step": step + 1,
                               "val_nll": current, "train_elapsed_s": train_elapsed,
                               "last_train_nll": loss.item(), "last_grad_norm": norm.item(),
-                              "peak_allocated_bytes": torch.cuda.max_memory_allocated()}), flush=True)
+                              "peak_allocated_bytes": torch.cuda.max_memory_allocated()}
+            if step + 1 == args.steps:
+                record["mechanism"] = mechanism_metrics(model, args.mode, validation[0][0])
+            print(json.dumps(record), flush=True)
             start = time.monotonic()
 
 
