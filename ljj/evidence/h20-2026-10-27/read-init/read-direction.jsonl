@@ -1,0 +1,15 @@
+{"precision": "bf16", "windows": 128, "read_contrast": 0, "val_nll": 3.0963363219052553, "vs_zero": null}
+{"precision": "bf16", "windows": 128, "read_contrast": -0.05, "val_nll": 3.0963031742721796, "vs_zero": {"delta_nll": -3.314763307571411e-05, "window_se": 0.0002689369528430415}}
+{"precision": "bf16", "windows": 128, "read_contrast": 0.05, "val_nll": 3.096512448042631, "vs_zero": {"delta_nll": 0.0001761261373758316, "window_se": 0.0002790484865529303}}
+{"precision": "bf16", "windows": 128, "read_contrast": -0.25, "val_nll": 3.097006030380726, "vs_zero": {"delta_nll": 0.0006697084754705429, "window_se": 0.000362340017658933}}
+{"precision": "bf16", "windows": 128, "read_contrast": 0.25, "val_nll": 3.0968098491430283, "vs_zero": {"delta_nll": 0.0004735272377729416, "window_se": 0.000358501639830404}}
+{"precision": "bf16", "windows": 32, "read_contrast": 0, "val_nll": 3.051683858036995, "vs_zero": null}
+{"precision": "bf16", "windows": 32, "read_contrast": -0.05, "val_nll": 3.0524829030036926, "vs_zero": {"delta_nll": 0.0007990449666976929, "window_se": 0.0005471418170033855}}
+{"precision": "bf16", "windows": 32, "read_contrast": 0.05, "val_nll": 3.052411638200283, "vs_zero": {"delta_nll": 0.0007277801632881165, "window_se": 0.0005169314978734028}}
+{"precision": "bf16", "windows": 32, "read_contrast": -0.25, "val_nll": 3.0529636442661285, "vs_zero": {"delta_nll": 0.001279786229133606, "window_se": 0.0007452970062715923}}
+{"precision": "bf16", "windows": 32, "read_contrast": 0.25, "val_nll": 3.0527530387043953, "vs_zero": {"delta_nll": 0.00106918066740036, "window_se": 0.0007752931795801245}}
+{"precision": "fp32", "windows": 32, "read_contrast": 0, "val_nll": 3.0507622584700584, "vs_zero": null}
+{"precision": "fp32", "windows": 32, "read_contrast": -0.05, "val_nll": 3.0509307831525803, "vs_zero": {"delta_nll": 0.00016852468252182007, "window_se": 9.29307183529016e-05}}
+{"precision": "fp32", "windows": 32, "read_contrast": 0.05, "val_nll": 3.0506521463394165, "vs_zero": {"delta_nll": -0.00011011213064193726, "window_se": 9.027646068359403e-05}}
+{"precision": "fp32", "windows": 32, "read_contrast": -0.25, "val_nll": 3.0522328317165375, "vs_zero": {"delta_nll": 0.0014705732464790344, "window_se": 0.0004810228044925597}}
+{"precision": "fp32", "windows": 32, "read_contrast": 0.25, "val_nll": 3.050743483006954, "vs_zero": {"delta_nll": -1.8775463104248047e-05, "window_se": 0.00041980926237546694}}

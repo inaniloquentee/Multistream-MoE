@@ -7,10 +7,28 @@ import torch
 from transformers import Qwen3Config, Qwen3ForCausalLM
 
 from multistream_moe.qwen_reference import QwenMultiStream
-from experiments.train_qwen import forward_batch
+from experiments.train_qwen import forward_batch, learning_rate, mechanism_metrics
 
 
 class QwenReferenceTests(unittest.TestCase):
+    def test_learning_rate_warmup_and_legacy_schedule(self):
+        self.assertAlmostEqual(learning_rate(1e-5, 0, 1000, 100), 1e-7)
+        self.assertAlmostEqual(learning_rate(1e-5, 99, 1000, 100), 1e-5)
+        self.assertAlmostEqual(learning_rate(1e-5, 100, 1000, 100), 1e-5)
+        self.assertAlmostEqual(learning_rate(1e-5, 999, 1000, 100), 1e-6)
+        self.assertAlmostEqual(learning_rate(1e-5, 0, 32, 0), 1e-5)
+        self.assertAlmostEqual(learning_rate(1e-5, 31, 32, 0), 1e-6)
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA mechanism probe")
+    def test_mechanism_metrics_starts_with_zero_read_diversity(self):
+        torch.manual_seed(42)
+        model = QwenMultiStream(copy.deepcopy(self.base), "D").cuda().eval()
+        metrics = mechanism_metrics(model, "D", self.tokens.cuda())
+        self.assertEqual(metrics["second_read_expert_weight_rms"], 0)
+        self.assertEqual(metrics["second_read_expert_bias_rms"], 0)
+        self.assertEqual(metrics["second_write_expert_weight_rms"], 0)
+        self.assertGreater(metrics["final_stream_centered_rms"], 0)
+
     def setUp(self):
         torch.manual_seed(9)
         cfg = Qwen3Config(vocab_size=128, hidden_size=32, intermediate_size=64,

@@ -61,6 +61,8 @@ Y^+=R(Y)Y+b_s(Y)E_s(a_s(Y)Y)+\sum_{j\in Top2(Y)}g_j(Y)b_j(Y)E_j(a_j(Y)Y).
 
 阶段 Q2（需要 H20 配额和固定语料快照）：选取并记录不可漂移的 FineWeb-Edu shard commit、文件 SHA256、文档 ID、去重规则、Qwen tokenizer revision，按文档划分互斥且固定不少于约 200 万验证 token。先做 1,000 步诊断，不从代理集 checkpoint 续训；有资源后按 10,000 步计划从同一个 base checkpoint 重新开始，五组配对种子 42/43/44，预注册相同窗口、batch、seq、有效 token 数和 schedule，并发布原始曲线及 GPU 时。比较 D-C、C-B 三种子的逐对差值、末步方向和同 GPU 时成本；达到第 5 节探索性门槛才投入 EP/融合。若 Q2 无法执行，只报告 Q0/Q1 正确性与成本，结论为**有效性未验证**。
 
+固定快照 1,000 步诊断的实际预设：FineWeb-Edu revision `87f09149ef4734204d70ed1d046ddc9ca3f2b8f9` 的 `sample/10BT/000_00000.parquet`，源 SHA256 `b1ba7b2ce4cb5ea6ef42dca40263eabb85f37700d01693a68e9b30a31d78e871`；按文档 ID 哈希作 90/10 切分、跳过全局精确重复文本，生成至少 2,000 万训练和 200 万验证 token。五组各用种子 42/43/44、batch 2、seq 128、1,000 步（每组 256,000 训练 token）、BF16、AdamW `lr=1e-5`，100 步线性预热后余弦降至 10%；每 100 步在相同的 128 个 batch（32,768 token）上评估，记录训练循环秒数、显存和末步流/读写参数差异。验证 corpus 大于评估窗口，不可把 32,768 token 采样称为全量验证；这仍是诊断，不替代预设的 10,000 步、多种子、完整固定验证实验。
+
 ## 8. 当前交付状态
 
-`ljj/multistream_moe/multistream.py` 与 `ljj/experiments/train.py` 是单卡、无 EP 的从零训练参考和冒烟入口；`ljj/multistream_moe/qwen_reference.py` 与 `ljj/experiments/train_qwen.py` 是优先的 Qwen 路径。最小有效对照至少需要两层 MoE（当前隔层 MoE 即至少四层）：第一层的非均匀写回生成流差异，第二层的独立读取才能使用它；只有一层 MoE 的 C/D 比较是无效检验。Qwen 的完整数据训练、EP 对照、自定义融合及多种子结论均**未完成**。每次 PR 必须附实际命令、提交号、环境清单、原始日志及失败项，不以本规格代替实验结果。
+`ljj/multistream_moe/multistream.py` 与 `ljj/experiments/train.py` 是单卡、无 EP 的从零训练参考和冒烟入口；`ljj/multistream_moe/qwen_reference.py` 与 `ljj/experiments/train_qwen.py` 是优先的 Qwen 路径。最小有效对照至少需要两层 MoE（当前隔层 MoE 即至少四层）：第一层的非均匀写回生成流差异，第二层的独立读取才能使用它；只有一层 MoE 的 C/D 比较是无效检验。H20 上的代理集 Q1、额外代理集 1,000 步三种子诊断，以及固定 Parquet shard 的 1,000 步三种子诊断已完成，见 `ljj/RESULTS.md`；后者未达到探索性收益门槛。固定快照 10,000 步与全量验证、EP 对照、自定义融合仍**未完成**，不应称为最终多种子质量结论。每次 PR 必须附实际命令、提交号、环境清单、原始日志及失败项，不以本规格代替实验结果。
